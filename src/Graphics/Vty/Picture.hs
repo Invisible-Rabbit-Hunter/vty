@@ -10,7 +10,6 @@ module Graphics.Vty.Picture
   , addToBottom
   , picForImage
   , picForLayers
-  , picImage
   )
 where
 
@@ -25,7 +24,7 @@ import Control.DeepSeq
 data Picture = Picture
     { picCursor :: Cursor
     -- ^ The picture's cursor.
-    , picLayers :: [Image]
+    , picImage :: Image
     -- ^ The picture's image layers (top-most first).
     , picBackground :: Background
     -- ^ The picture's background to be displayed in locations with no
@@ -37,15 +36,15 @@ instance NFData Picture where
 
 -- | A picture with no cursor, background or image layers.
 emptyPicture :: Picture
-emptyPicture = Picture NoCursor [] ClearBackground
+emptyPicture = Picture NoCursor mempty ClearBackground
 
 -- | Add an 'Image' as the top-most layer of a 'Picture'.
 addToTop :: Picture -> Image -> Picture
-addToTop p i = p {picLayers = i : picLayers p}
+addToTop p i = p {picImage = picImage p <> i}
 
 -- | Add an 'Image' as the bottom-most layer of a 'Picture'.
 addToBottom :: Picture -> Image -> Picture
-addToBottom p i = p {picLayers = picLayers p ++ [i]}
+addToBottom p i = p {picImage = i <> picImage p}
 
 -- | Create a picture from the given image. The picture will not have a
 -- displayed cursor and no background pattern (ClearBackground) will be
@@ -53,7 +52,7 @@ addToBottom p i = p {picLayers = picLayers p ++ [i]}
 picForImage :: Image -> Picture
 picForImage i = Picture
     { picCursor = NoCursor
-    , picLayers = [i]
+    , picImage = i
     , picBackground = ClearBackground
     }
 
@@ -64,7 +63,7 @@ picForImage i = Picture
 picForLayers :: [Image] -> Picture
 picForLayers is = Picture
     { picCursor = NoCursor
-    , picLayers = is
+    , picImage = mconcat is
     , picBackground = ClearBackground
     }
 
@@ -118,11 +117,3 @@ data Background
 instance NFData Background where
     rnf (Background c a) = c `seq` a `seq` ()
     rnf ClearBackground = ()
-
--- | Return the top-most 'Image' layer for a picture. This is unsafe for
--- 'Picture's without at least one layer.
---
--- This is provided for compatibility with applications that do not use
--- more than a single layer.
-picImage :: Picture -> Image
-picImage = head . picLayers

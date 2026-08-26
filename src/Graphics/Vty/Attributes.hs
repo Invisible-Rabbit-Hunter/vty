@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- | Display attributes
 --
@@ -27,35 +28,39 @@
 -- The value 'currentAttr' will keep the attributes of whatever was
 -- output previously.
 module Graphics.Vty.Attributes
-  ( module Graphics.Vty.Attributes.Color
+  ( module Graphics.Vty.Attributes.Color,
+    Attr (..),
+    FixedAttr (..),
+    MaybeDefault (..),
+    defAttr,
+    currentAttr,
 
-  , Attr(..)
-  , FixedAttr(..)
-  , MaybeDefault(..)
-  , defAttr
-  , currentAttr
+    -- * Styles
+    Style,
+    withStyle,
+    standout,
+    italic,
+    strikethrough,
+    underline,
+    reverseVideo,
+    blink,
+    dim,
+    bold,
+    defaultStyleMask,
+    styleMask,
+    hasStyle,
 
-  -- * Styles
-  , Style
-  , withStyle
-  , standout
-  , italic
-  , strikethrough
-  , underline
-  , reverseVideo
-  , blink
-  , dim
-  , bold
-  , defaultStyleMask
-  , styleMask
-  , hasStyle
+    -- * Setting attribute colors
+    withForeColor,
+    withBackColor,
 
-  -- * Setting attribute colors
-  , withForeColor
-  , withBackColor
-
-  -- * Setting hyperlinks
-  , withURL
+    -- * Setting hyperlinks
+    withURL,
+    withAttr,
+    fg,
+    bg,
+    url,
+    style,
   )
 where
 
@@ -64,8 +69,8 @@ import Data.Bits
 import Data.Text (Text)
 import Data.Word
 import GHC.Generics
-
 import Graphics.Vty.Attributes.Color
+import Data.Monoid.Action
 
 -- | A display attribute defines the Color and Style of all the
 -- characters rendered after the attribute is applied.
@@ -75,11 +80,27 @@ import Graphics.Vty.Attributes.Color
 -- 16 colors are points in different palettes. See Color for more
 -- information.
 data Attr = Attr
-    { attrStyle :: !(MaybeDefault Style)
-    , attrForeColor :: !(MaybeDefault Color)
-    , attrBackColor :: !(MaybeDefault Color)
-    , attrURL :: !(MaybeDefault Text)
-    } deriving ( Eq, Show, Read, Generic, NFData )
+  { attrStyle :: !(MaybeDefault Style),
+    attrForeColor :: !(MaybeDefault Color),
+    attrBackColor :: !(MaybeDefault Color),
+    attrURL :: !(MaybeDefault Text)
+  }
+  deriving (Eq, Show, Read, Generic, NFData)
+
+instance Semigroup Attr where
+  attr1 <> attr2 =
+    Attr
+      { attrStyle = attrStyle attr1 <> attrStyle attr2,
+        attrForeColor = attrForeColor attr1 <> attrForeColor attr2,
+        attrBackColor = attrBackColor attr1 <> attrBackColor attr2,
+        attrURL = attrURL attr1 <> attrURL attr2
+      }
+
+instance Monoid Attr where
+    mempty = Attr mempty mempty mempty mempty
+
+withAttr :: Action Attr a => Attr -> a -> a
+withAttr = act
 
 -- This could be encoded into a single 32 bit word. The 32 bit word is
 -- first divided into 4 groups of 8 bits where: The first group codes
@@ -118,11 +139,12 @@ data Attr = Attr
 -- attribute. The display attributes can still depend on the terminal's
 -- default colors (unfortunately).
 data FixedAttr = FixedAttr
-    { fixedStyle :: !Style
-    , fixedForeColor :: !(Maybe Color)
-    , fixedBackColor :: !(Maybe Color)
-    , fixedURL       :: !(Maybe Text)
-    } deriving ( Eq, Show )
+  { fixedStyle :: !Style,
+    fixedForeColor :: !(Maybe Color),
+    fixedBackColor :: !(Maybe Color),
+    fixedURL :: !(Maybe Text)
+  }
+  deriving (Eq, Show)
 
 -- | The style and color attributes can either be the terminal defaults.
 -- Or be equivalent to the previously applied style. Or be a specific
@@ -131,9 +153,17 @@ data MaybeDefault v = Default | KeepCurrent | SetTo !v
   deriving (Eq, Read, Show)
 
 instance (NFData v) => NFData (MaybeDefault v) where
-    rnf Default = ()
-    rnf KeepCurrent = ()
-    rnf (SetTo v) = rnf v
+  rnf Default = ()
+  rnf KeepCurrent = ()
+  rnf (SetTo v) = rnf v
+
+instance Semigroup (MaybeDefault v) where
+  KeepCurrent <> v = v
+  v <> KeepCurrent = v
+  v <> _ = v
+
+instance Monoid (MaybeDefault v) where
+  mempty = KeepCurrent
 
 -- | Styles are represented as an 8 bit word. Each bit in the word is 1
 -- if the style attribute assigned to that bit should be applied and 0
@@ -161,41 +191,41 @@ type Style = Word8
 --  (The invisible, protect, and altcharset display attributes some
 --  terminals support are not supported via VTY.)
 standout, underline, reverseVideo, blink, dim, bold, italic, strikethrough :: Style
-standout        = 0x01
-underline       = 0x02
-reverseVideo    = 0x04
-blink           = 0x08
-dim             = 0x10
-bold            = 0x20
-italic          = 0x40
-strikethrough   = 0x80
+standout = 0x01
+underline = 0x02
+reverseVideo = 0x04
+blink = 0x08
+dim = 0x10
+bold = 0x20
+italic = 0x40
+strikethrough = 0x80
 
 defaultStyleMask :: Style
 defaultStyleMask = 0x00
 
 styleMask :: Attr -> Word8
-styleMask attr
-    = case attrStyle attr of
-        Default  -> 0
-        KeepCurrent -> 0
-        SetTo v  -> v
+styleMask attr =
+  case attrStyle attr of
+    Default -> 0
+    KeepCurrent -> 0
+    SetTo v -> v
 
 -- | true if the given Style value has the specified Style set.
 hasStyle :: Style -> Style -> Bool
-hasStyle s bitMask = ( s .&. bitMask ) /= 0
+hasStyle s bitMask = (s .&. bitMask) /= 0
 
 -- | Set the foreground color of an `Attr'.
 withForeColor :: Attr -> Color -> Attr
-withForeColor attr c = attr { attrForeColor = SetTo c }
+withForeColor attr c = attr {attrForeColor = SetTo c}
 
 -- | Set the background color of an `Attr'.
 withBackColor :: Attr -> Color -> Attr
-withBackColor attr c = attr { attrBackColor = SetTo c }
+withBackColor attr c = attr {attrBackColor = SetTo c}
 
 -- | Add the given style attribute
 withStyle :: Attr -> Style -> Attr
 withStyle attr 0 = attr
-withStyle attr styleFlag = attr { attrStyle = SetTo $ styleMask attr .|. styleFlag }
+withStyle attr styleFlag = attr {attrStyle = SetTo $ styleMask attr .|. styleFlag}
 
 -- | Add a hyperlinked URL using the proposed [escape sequences for
 -- hyperlinked
@@ -209,7 +239,7 @@ withStyle attr styleFlag = attr { attrStyle = SetTo $ styleMask attr .|. styleFl
 -- effect. To enable it, enable 'Hyperlink' mode on your Vty output
 -- interface.
 withURL :: Attr -> Text -> Attr
-withURL attr url = attr { attrURL = SetTo url }
+withURL attr url = attr {attrURL = SetTo url}
 
 -- | Sets the style, background color and foreground color to the
 -- default values for the terminal. There is no easy way to determine
@@ -226,3 +256,13 @@ defAttr = Attr Default Default Default Default
 -- with the foreground color set to brightMagenta.
 currentAttr :: Attr
 currentAttr = Attr KeepCurrent KeepCurrent KeepCurrent KeepCurrent
+
+fg, bg :: Action Attr a => Maybe Color -> a -> a
+fg c = withAttr mempty {attrForeColor = maybe Default SetTo c}
+bg c = withAttr mempty {attrBackColor = maybe Default SetTo c}
+
+url :: Action Attr a => Maybe Text -> a -> a
+url t = withAttr mempty {attrURL = maybe Default SetTo t}
+
+style :: Action Attr a => Maybe Style -> a -> a
+style s = withAttr mempty {attrStyle = maybe Default SetTo s}

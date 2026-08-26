@@ -53,13 +53,19 @@ library
                        binary,
                        parsec,
                        filepath,
-                       directory
+                       directory,
+                       monoid-extras,
+                       containers,
+                       primitive
 
   if !impl(ghc >= 8.0)
     build-depends:     semigroups >= 0.16,
                        fail
 
-  exposed-modules:     Graphics.Text.Width
+  exposed-modules:     Graphics.Vty.Image.BBox
+                       Graphics.Vty.Image.Translation
+                       Graphics.Vty.Image.Crop
+                       Graphics.Text.Width
                        Graphics.Vty
                        Graphics.Vty.Attributes
                        Graphics.Vty.Attributes.Color
